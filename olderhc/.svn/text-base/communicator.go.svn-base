@@ -1,0 +1,126 @@
+package olderhc
+
+import (
+	"encoding/json"
+	nsq "github.com/bitly/go-nsq"
+	"log"
+	"strconv"
+	//"github.com/golang/protobuf/proto"
+	"github.com/huoyan108/dataRelayGo/olderhc/pbgo"
+)
+
+//func Receive(cs map[string]chan byte) {
+//	q.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
+//		defer func() {
+//			if x := recover(); x != nil {
+//				log.Println("sorry, chan has closed")
+//			}
+//		}()
+//
+//		log.Printf("Got one message: %v", message.Body)
+//
+//       //SendMsg(topic,msg)
+//		res := BuildResult(message.Body)
+//        if res.commandType ==int32( Report.Command_CMT_REPWARNUP){
+//           // mqttChan <- res.info
+//        }
+//		chanKey := res.mac + strconv.Itoa(int(res.serialNum))
+//		ci, ok := cs[chanKey]
+//		if !ok {
+//			log.Println("no chan!")
+//		} else {
+//			ci <- res.info
+//			close(ci)
+//			delete(cs, chanKey)
+//			log.Println("delete existed chan!")
+//		}
+//		return nil
+//	}))
+//
+//	nsqlookup_url, _ := config.GetString("message", "nsqlookup_url")
+//	errConsumer := q.ConnectToNSQD(nsqlookup_url)
+//	if errConsumer != nil {
+//		log.Panic("Consumer could not connect nsq")
+//	}
+//}
+
+func Receive(cs map[string]chan []*Report.Command_Param) {
+	q.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
+		defer func() {
+			if x := recover(); x != nil {
+				log.Println("sorry, chan has closed")
+			}
+		}()
+
+		log.Printf("Got one message: %v", message.Body)
+
+		res := BuildResult(message.Body)
+		if res.commandType == int32(Report.Command_CMT_REPWARNUP) {
+
+			var jsonRes []byte //返回内容
+			var paras []*Report.Command_Param
+			paras = []*Report.Command_Param(res.paras)
+
+			var gatewayinfo GatewayInfo
+			gatewayinfo.Deviceid = strconv.Itoa(int(paras[0].Npara))
+			var count int
+			count = paras[1].Npara
+			for i := 0; i < count; i++ {
+
+				var endpoint EndpointTag
+				endpoint.Endpoint = strconv.Itoa(int(paras[i*2+2+0]))
+				endpoint.Devicetype = strconv.Itoa(int(paras[i*2+2+1]))
+				gatewayinfo.Endpoints = append(gatewayinfo.Endpoints, endpoint)
+			}
+			jsonRes, _ = json.Marshal(gatewayinfo)
+			SendMsg(res.mac, string(jsonRes))
+		} else if res.commandType == int32(Report.Command_CMT_REPADDDELDEVICE) {
+
+			var jsonRes []byte //返回内容
+			var paras []*Report.Command_Param
+			paras = []*Report.Command_Param(res.paras)
+
+			mapValue := make(map[string]string)
+			mapValue["deviceid"] = strconv.Itoa(int(paras[0].Npara))
+			mapValue["ednpoint"] = strconv.Itoa(int(paras[1].Npara))
+			mapValue["warntime"] = strconv.Itoa(int(paras[2].Npara))
+			mapValue["zonetype"] = strconv.Itoa(int(paras[3].Npara))
+			mapValue["zonestatus"] = strconv.Itoa(int(paras[4].Npara))
+			jsonRes, _ = json.Marshal(mapValue)
+			SendMsg(res.mac, string(jsonRes))
+
+		} else {
+			chanKey := res.mac + strconv.Itoa(int(res.serialNum))
+			//log.Println("nsqrecv"+chanKey)
+			ci, ok := cs[chanKey]
+			//log.Println(cs)
+			if !ok {
+				log.Println("no chan!")
+			} else {
+				ci <- res.paras
+				close(ci)
+				delete(cs, chanKey)
+				//log.Println("delete existed chan!")
+			}
+		}
+		return nil
+	}))
+
+	nsqlookup_url, _ := config.GetString("message", "nsqlookup_url")
+	errConsumer := q.ConnectToNSQD(nsqlookup_url)
+	if errConsumer != nil {
+		log.Panic("Consumer could not connect nsq")
+	}
+}
+
+func Send(command []byte) {
+
+	command_topic, _ := config.GetString("message", "command_topic")
+
+	err := w.Publish(command_topic, command)
+	if err != nil {
+		log.Panic("communicator Send could not connect nsq")
+	}
+
+	//log.Println("send command ok!", command)
+}

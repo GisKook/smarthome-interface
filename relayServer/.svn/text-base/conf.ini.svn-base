@@ -1,0 +1,25 @@
+[message]
+
+# nsqlookup address
+nsqlookup_url=192.168.2.66:4150
+#nsqlookup_url=192.168.8.178:4150
+
+#nsqlookup_url=192.168.8.90:4150
+
+# nsq address
+#nsq_url=192.168.8.178:4150
+#nsq_url=192.168.8.90:4150
+nsq_url=192.168.2.66.4150
+
+# nsq for control command topic
+command_topic=app2sha
+consumerTopic=sha2app
+
+# delay time for reading command answer
+
+delay_time=3
+
+[server]
+
+# host port
+port=9010

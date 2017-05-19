@@ -1,0 +1,17 @@
+K 25
+svn:wc:ra_dav:version-url
+V 90
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/pbgo
+END
+Command.proto
+K 25
+svn:wc:ra_dav:version-url
+V 104
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/pbgo/Command.proto
+END
+Command.pb.go
+K 25
+svn:wc:ra_dav:version-url
+V 104
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/pbgo/Command.pb.go
+END

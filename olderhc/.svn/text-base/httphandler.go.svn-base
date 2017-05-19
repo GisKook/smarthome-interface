@@ -1,0 +1,1191 @@
+package olderhc
+
+import (
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"github.com/golang/protobuf/proto"
+	"github.com/huoyan108/dataRelayGo/olderhc/pbgo"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+)
+
+func char2byte(c string) byte {
+	switch c {
+	case "0":
+		return 0
+	case "1":
+		return 1
+	case "2":
+		return 2
+	case "3":
+		return 3
+	case "4":
+		return 4
+	case "5":
+		return 5
+	case "6":
+		return 6
+	case "7":
+		return 7
+	case "8":
+		return 8
+	case "9":
+		return 9
+	case "a":
+		return 10
+	case "b":
+		return 11
+	case "c":
+		return 12
+	case "d":
+		return 13
+	case "e":
+		return 14
+	case "f":
+		return 15
+	}
+	return 0
+}
+
+func Macaddr2uint64(mac string) uint64 {
+	var buffer []byte
+	buffer = append(buffer, 0)
+	buffer = append(buffer, 0)
+	value := char2byte(string(mac[0]))*16 + char2byte(string(mac[1]))
+	buffer = append(buffer, value)
+	value = char2byte(string(mac[2]))*16 + char2byte(string(mac[3]))
+	buffer = append(buffer, value)
+	value = char2byte(string(mac[4]))*16 + char2byte(string(mac[5]))
+	buffer = append(buffer, value)
+	value = char2byte(string(mac[6]))*16 + char2byte(string(mac[7]))
+	buffer = append(buffer, value)
+	value = char2byte(string(mac[8]))*16 + char2byte(string(mac[9]))
+	buffer = append(buffer, value)
+	value = char2byte(string(mac[10]))*16 + char2byte(string(mac[11]))
+	buffer = append(buffer, value)
+
+	return binary.BigEndian.Uint64(buffer)
+}
+
+//登陆指令处理
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	//获取请求参数mac、cmdtype
+	loginid := r.Form["loginid"][0]
+	tid := Macaddr2uint64(loginid)
+	password := r.Form["password"][0]
+	//构造指令内容
+
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQLOGIN,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_STRING,
+					Strpara: password,
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	//chanKey := loginid + strconv.Itoa(int(s))
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	//log.Println("http"+chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		// log.Println(chanKey)
+		//log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint64{"loginresult": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+
+func CheckOnlineHandler(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	//获取请求参数mac、cmdtype
+	loginid := r.Form["tid"][0]
+	tid := Macaddr2uint64(loginid)
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQONLINE,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT32,
+					Npara: uint64(tid),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	//log.Println("http"+chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		//log.Println(chanKey)
+		//log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint64{"checkRes": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+
+type EndpointTag struct {
+	Endpoint   uint8
+	Devicetype uint16
+}
+type Device struct {
+	Deviceid   uint64
+	Devicename string
+	Endpoints  []EndpointTag
+}
+type GatewayInfo struct {
+	Gatewayname string
+	TotalCount  int
+	Devices     []Device
+}
+
+type AddDelDev struct {
+	Deviceid  uint64
+	Endpoints []EndpointTag
+}
+
+func GetZBNodeHandler(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println(x)
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	devType := r.Form["devtype"][1]
+	nDevType, _ := strconv.Atoi(devType)
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          tid,
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQDEVICELIST,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT64,
+					Npara: uint64(nDevType),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	ci, ok := cs[chanKey]
+	if !ok {
+		log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		log.Println(chanKey)
+		log.Println(cs[chanKey])
+	}
+	log.Println("send msg")
+	Send(reqdata)
+
+	//type Endpoint struct {
+	//	Endpoint   uint8
+	//	Devicetype uint16
+	//}
+	//type Device struct {
+	//	Deviceid   uint64
+	//	Devicename string
+	//count
+	//	Endpoints  []Endpoint
+	//}
+	//type GatewayInfo struct {
+	//	Gatewayname string
+	//	TotalCount  int
+	//	Devices     []Device
+	//}
+	select {
+	case res := <-ci:
+		var paras []*Report.Command_Param
+		paras = res
+
+		var gatewayinfo GatewayInfo
+		gatewayinfo.Gatewayname = paras[0].Strpara
+		var totalCount int
+		totalCount = int(paras[1].Npara)
+		for i := 0; i < totalCount; i++ {
+
+			var device Device
+			var deviceInfo DeviceInfo
+			deviceInfo.Deviceid = paras[i*2+0+2].Npara
+			deviceInfo.Devicename = paras[i*5+1+2].Strpara
+
+			group.DeviceGroup = append(group.DeviceGroup, deviceInfo)
+		}
+		log.Println(group)
+		jsonRes, _ = json.Marshal(group)
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+
+func MainsOperationHandler(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	//获取请求参数mac、cmdtype
+	loginid := r.Form["tid"][0]
+	tid := Macaddr2uint64(loginid)
+	//tid ,errNum:=strconv.Atoi(loginid)
+	//// 请求参数不正确
+	//if errNum != nil || len(loginid) != 15{
+	//    jsonRes, _ = json.Marshal(map[string]byte{"result": BAD_PARAMETER})
+	//        fmt.Fprint(w, string(jsonRes))
+	//        log.Println("control command type error!")
+	//        return
+	//}
+	ep := r.Form["devid"][0]
+	nEp, _ := strconv.Atoi(ep)
+	operatortype := r.Form["operatortype"][0]
+	nOperatortype, _ := strconv.Atoi(operatortype)
+	ser := r.Form["ser"][0]
+	nSer, _ := strconv.Atoi(ser)
+	//构造指令内容
+
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQOP,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT64,
+					Npara: uint64(nEp),
+				},
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT8,
+					Npara: uint64(nSer),
+				},
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT8,
+					Npara: uint64(nOperatortype),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	//log.Println("http"+chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		//log.Println(chanKey)
+		//log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+
+		m := make(map[string]uint64)
+		m["controlRes"] = value
+		m["ser"] = uint64(nSer)
+		jsonRes, _ = json.Marshal(m)
+		//jsonRes, _ = json.Marshal(map[string]uint64{"controlRes": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+func ChangeDeviceNameHandler(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	//获取请求参数mac、cmdtype
+	loginid := r.Form["tid"][0]
+	tid := Macaddr2uint64(loginid)
+	//tid ,errNum:=strconv.Atoi(loginid)
+	//// 请求参数不正确
+	//if errNum != nil || len(loginid) != 15{
+	//    jsonRes, _ = json.Marshal(map[string]byte{"result": BAD_PARAMETER})
+	//        fmt.Fprint(w, string(jsonRes))
+	//        log.Println("control command type error!")
+	//        return
+	//}
+	ep := r.Form["ep"][0]
+	nep, _ := strconv.Atoi(ep)
+	newname := r.Form["newname"][0]
+	//构造指令内容
+
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQSETDEVICENAME,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT64,
+					Npara: uint64(nep),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_STRING,
+					Strpara: newname,
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	//log.Println("http"+chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		//log.Println(chanKey)
+		//log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint64{"changeNameRes": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+func ChangeUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	//获取请求参数mac、cmdtype
+	loginid := r.Form["tid"][0]
+	tid := Macaddr2uint64(loginid)
+	//tid ,errNum:=strconv.Atoi(loginid)
+	//// 请求参数不正确
+	//if errNum != nil || len(loginid) != 15{
+	//    jsonRes, _ = json.Marshal(map[string]byte{"result": BAD_PARAMETER})
+	//        fmt.Fprint(w, string(jsonRes))
+	//        log.Println("control command type error!")
+	//        return
+	//}
+	oldpwd := r.Form["oldpwd"][0]
+	newpwd := r.Form["newpwd"][0]
+	//构造指令内容
+
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQCHANGEPASSWD,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_STRING,
+					Strpara: oldpwd,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_STRING,
+					Strpara: newpwd,
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	//log.Println("http"+chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		log.Println(chanKey)
+		// log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint64{"changePwdRes": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+
+//删除设备
+/*
+CMT_REQ_DEL_DEVICE
+  参数 1.DeviceID(uint64 ieee)
+    CMT_REP_DEL_DEVICE
+	  参数 1.result(uint8 0.success 1.fail)
+*/
+func DelDeviceHandler(w http.ResponseWriter, r *http.Request) {
+
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	name := r.Form["name"][2]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_DEL_DEVICE,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT64,
+					Npara: uint64(deviceid),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	log.Println("http" + chanKey)
+
+	ci, ok := cs[chanKey]
+	if !ok {
+		// log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		//log.Println(chanKey)
+		// log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint8{"result": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+
+//设置名称指令处理
+/*
+CMT_REQ_SETNAME
+  参数 1.DeviceID(uint64 网关使用mac device使用ieee) 2.名称(string utf8)
+    CMT_REP_SETNAME
+	  参数 1.result(uint8 0.success 1.fail)
+*/
+func SetNameHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	name := r.Form["name"][2]
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_SETNAME,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT64,
+					Strpara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_STRING,
+					Strpara: name,
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	log.Println("http req:" + chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		log.Println(chanKey)
+		log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint64{"result": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+}
+
+//查询设备属性指令处理
+/*
+CMT_REQ_DEVICE_ATTR
+  参数 1.DeviceID(uint64 ieee) 2.endpoint(uint8)
+    CMT_REP_DEVICE_ATTR
+	  参数 1.shortaddr(uint16) 2.profileid(uint16) 3.zclversion (uint8) 4.applicationversion(uint8)
+	      5.stackversion(uint8) 6.hwversion(uint8) 7.manufacturename(utf8 string) 8.modelidentifier(utf8 string)
+		      9.datecode(utf8 string) 10.powersource(uint8)
+*/
+
+type DeviceAttr struct {
+	shortaddr          string
+	profileid          string
+	zclversionst       string
+	applicationversion string
+	stackversion       string
+	hwversion          string
+	manufacturename    string
+	modelidentifier    string
+	datecode           string
+	powersource        string
+}
+
+func GetDevAttributeHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	sEndpoint := r.Form["endpoint"][2]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.CMT_REP_DEVICE_ATTR,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT64,
+					Npara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:  Report.Command_Param_UINT8,
+					Npara: uint8(sEndpoint),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	log.Println("http" + chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		// log.Println(chanKey)
+		//log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	//shortaddr          string
+	//profileid          string
+	//zclversionst       string
+	//applicationversion string
+	//stackversion       string
+	//hwversion          string
+	//manufacturename    string
+	//modelidentifier    string
+	//datecode           string
+	//powersource        string
+	select {
+	case res := <-ci:
+		var paras []*Report.Command_Param
+		paras = res
+		var attr DeviceAttr
+		var value string
+		value = []*Report.Command_Param(res)[0].Npara
+		value = []*Report.Command_Param(res)[1].Strpara
+		value = []*Report.Command_Param(res)[2].Strpara
+		value = []*Report.Command_Param(res)[3].Strpara
+		value = []*Report.Command_Param(res)[4].Strpara
+		value = []*Report.Command_Param(res)[5].Strpara
+		value = []*Report.Command_Param(res)[6].Strpara
+		value = []*Report.Command_Param(res)[7].Strpara
+		value = []*Report.Command_Param(res)[8].Strpara
+		value = []*Report.Command_Param(res)[9].Strpara
+
+		log.Println(attr)
+		jsonRes, _ = json.Marshal(attr)
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}
+
+//设备点名指令处理
+/*
+CMT_REQ_DEVICE_IDENTIFY
+  参数 1.DeviceID(uint64) 2.endpoint(uint8)
+    默认 返回  总是返回发送成功.
+*/
+func CallDevHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	sEndpoint := r.Form["endpoint"][2]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_DEVICE_IDENTIFY,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT64,
+					Strpara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sEndpoint),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+	Send(reqdata)
+
+	jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_SUCCESS})
+	fmt.Fprint(w, string(jsonRes))
+}
+
+//设备报警指令处理
+/*
+CMT_REQ_DEVICE_WARN
+  参数 1.DeviceID(uint64) 2.endpoint(uint8) 3.warningduration(uint8报警时长，s)
+           4.WarningMode(uint8 取值0~6) 5.storebe(uint8 0-1) 6.sirenlevel(uint8 0-3)
+		            7.strobelevel(uint8 0-3) 8.strobedutycycle(uint8 01)
+					  返回结果  总是返回发送成功.
+*/
+func DevWarnHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	sEndpoint := r.Form["endpoint"][2]
+	sWarningduration := r.Form["warningduration"][3]
+	sWarningmode := r.Form["warningmode"][4]
+	sStorebe := r.Form["storebe"][5]
+	sSirenlevel := r.Form["sirenlevel"][6]
+	sStrobelevel := r.Form["strobelevel"][7]
+	sStrobedutycycle := r.Form["strobedutycycle"][8]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_DEVICE_WARN,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT64,
+					Strpara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sEndpoint),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sWarningduration),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sWarningmode),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sStrobe),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sSirenlevel),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sStrobelevel),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sStrobedutycycle),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+	Send(reqdata)
+
+	jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_SUCCESS})
+	fmt.Fprint(w, string(jsonRes))
+}
+
+//布防撤销指令处理
+/*
+CMT_REQ_DEPLOYMENT
+  B.参数 1.deviceid(uint64) 2. endpoint(uint8) 3.armmodel(uint8 0 arm 1 disarm 2 armtime)
+           4.armstarttime_hour(uint8 0-24) 5.armstarttime_min(uint8 0-60)
+		            6.armendtime_hour(uint8 0-24) 7.armendtime_min(uint8 0-60)
+					  返回结果  总是返回发送成功.
+*/
+func DefenceCancleHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	sEndpoint := r.Form["endpoint"][2]
+	sArmmodel := r.Form["armmodel"][3]
+	sArm := r.Form["arm"][4]
+	sArmstarttime_hour := r.Form["armstarttime_hour"][5]
+	sArmstarttime_min := r.Form["armstarttime_min"][6]
+	sArmendtime_hour := r.Form["armendtime_hour"][7]
+	sArmendtime_min := r.Form["armendtime_min"][8]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_DEPLOYMENT,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT64,
+					Strpara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sEndpoint),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sArmmodel),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sArmstarttime_hour),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sArmstarttime_min),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sArmendtime_hour),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sArmendtime_min),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+	Send(reqdata)
+
+	jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_SUCCESS})
+	fmt.Fprint(w, string(jsonRes))
+}
+
+//等级控制指令处理
+/*
+CMT_REQ_LEVELCONTROL
+  参数 1.deviceid(uint64) 2.endpoint(uint8) 3.level (uint8 0-255)
+    返回结果  总是返回发送成功.
+*/
+func LevelControlHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	sEndpoint := r.Form["endpoint"][2]
+	sLevel := r.Form["level"][3]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_LEVELCONTROL,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT64,
+					Strpara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sEndpoint),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sLevel),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+	Send(reqdata)
+
+	jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_SUCCESS})
+	fmt.Fprint(w, string(jsonRes))
+}
+
+//开关设备指令处理
+/*
+CMT_REQ_ONOFF
+  参数 1.deviceid(uint64) 2.endpoint(uint8) 3.action(uint8 0 for on 1 for off)
+     CMT_REP_ONOFF
+	   参数 1.result(uint8 0.success 1.fail)
+*/
+func OnOffDevHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	now := time.Now()
+	var s int32 = int32(now.Unix())
+	var jsonRes []byte //返回内容
+	//处理panic
+	defer func() {
+		if x := recover(); x != nil {
+			jsonRes, _ = json.Marshal(map[string]byte{"result": SERVER_FAILED})
+			fmt.Fprint(w, string(jsonRes))
+			log.Println("sorry, server break down!")
+		}
+	}()
+
+	sGatewayid := r.Form["gatewayid"][0]
+	tid := Macaddr2uint64(sGatewayid)
+	sDeviceid := r.Form["deviceid"][1]
+	deviceid := Macaddr2uint64(sDeviceid)
+	sEndpoint := r.Form["endpoint"][2]
+	sAction := r.Form["action"][3]
+
+	//构造指令内容
+	req := &Report.ControlReport{
+		Tid:          uint64(tid),
+		SerialNumber: uint32(s),
+		Command: &Report.Command{
+			Type: Report.Command_CMT_REQ_ONOFF,
+			Paras: []*Report.Command_Param{
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT64,
+					Strpara: deviceid,
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sEndpoint),
+				},
+				&Report.Command_Param{
+					Type:    Report.Command_Param_UINT8,
+					Strpara: uint8(sAction),
+				},
+			},
+		},
+	}
+	reqdata, _ := proto.Marshal(req)
+
+	//log.Printf("control command request: ", reqdata)
+
+	//chanKey := loginid + strconv.Itoa(int(s))
+	chanKey := strconv.Itoa(int(tid)) + strconv.Itoa(int(s))
+	//log.Println("http"+chanKey)
+	ci, ok := cs[chanKey]
+	if !ok {
+		//log.Println("make chan")
+		ci = make(chan []*Report.Command_Param)
+		cs[chanKey] = ci
+		// log.Println(chanKey)
+		//log.Println(cs[chanKey])
+	}
+	Send(reqdata)
+
+	select {
+	case res := <-ci:
+		value := []*Report.Command_Param(res)[0].Npara
+		//log.Println(value)
+		jsonRes, _ = json.Marshal(map[string]uint64{"result": value})
+
+	case <-time.After(time.Duration(delay) * time.Second):
+		log.Println("res : 超时")
+		close(ci)
+		delete(cs, chanKey)
+		jsonRes, _ = json.Marshal(map[string]byte{"result": CONTROL_FAILURE})
+	}
+
+	fmt.Fprint(w, string(jsonRes))
+
+}

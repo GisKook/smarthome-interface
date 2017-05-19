@@ -1,0 +1,67 @@
+syntax="proto3";
+package Report;
+
+message Command {
+	enum CommandType {
+		CMT_INVALID          = 0x0000;  // unillgle
+
+		// gateway->web message
+		CMT_REQ_LOGIN            = 0x0001;
+		CMT_REP_ONLINE           = 0x0002;
+		CMT_REP_ADD_DEL_DEVICE   = 0x0005;  // for mosqitto
+		CMT_REP_NOTIFICATION     = 0x0006;  // for mosqitto
+		CMT_REP_SETNAME          = 0x0008;
+		CMT_REP_DEL_DEVICE       = 0x000a;
+		CMT_REP_DEVICE_ATTR      = 0x000b;
+		CMT_REP_DEPLOYMENT       = 0x000f;
+		CMT_REP_ONOFF            = 0x0013;  // only for onoff device
+		CMT_REP_DEVICE_ONLINE    = 0x0015;  // unsupport right now
+		CMT_REP_ONOFF_STATUS     = 0x0016;  // unsupport right now only for onoff deivce
+		CMT_REP_DEVICELIST       = 0x0801;
+
+		
+		// web->gateway
+		CMT_REP_LOGIN               = 0x8001;
+		CMT_REQ_ONLINE              = 0x8002;
+		CMT_REQ_SETNAME             = 0x8008;
+		CMT_REQ_DEL_DEVICE          = 0x800a;
+		CMT_REQ_DEVICE_ATTR         = 0x800b;
+		CMT_REQ_DEVICE_IDENTIFY     = 0x800c;  // no feedback
+		CMT_REQ_DEVICE_WARN         = 0x800d;  // no feedback for device id = 0x0403 warn
+		CMT_REQ_DEPLOYMENT          = 0x800f;
+		CMT_REQ_DEVICE_LEVELCONTROL = 0x8011;  // no feedback
+		CMT_REQ_ONOFF               = 0x8013;  // only for onoff device
+		CMT_REQ_DEVICE_ONLINE       = 0x8015;  // unsupport right now
+		CMT_REQ_ONOFF_STATUS        = 0x8016;  // unsupport right now only for onoff deivce
+		CMT_REQ_DEVICELIST          = 0x8801;
+
+	}
+	CommandType type = 1;
+
+	message Param {
+		enum ParaType {
+			Null   = 0x00;
+			UINT8   = 0x01;
+			UINT16  = 0x02;
+			UINT32  = 0x03;
+			UINT64  = 0x04;
+			FLOAT  = 0x10;
+			DOUBLE = 0x11;
+			STRING = 0x20;
+			BYTES  = 0x21;
+		}
+		ParaType type = 1;
+		uint64  npara  = 2;
+		double dpara  = 3;
+		string strpara= 4;
+		bytes  bpara  = 5;
+	}
+	repeated Param paras = 2;
+}
+
+message ControlReport {
+	uint64  tid = 1;
+	uint32  serial_number = 2;
+
+	Command command = 3;
+}

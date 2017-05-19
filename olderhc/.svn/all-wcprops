@@ -1,0 +1,35 @@
+K 25
+svn:wc:ra_dav:version-url
+V 85
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc
+END
+httphandler.go
+K 25
+svn:wc:ra_dav:version-url
+V 100
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/httphandler.go
+END
+communicator.go
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/communicator.go
+END
+commandProc.go
+K 25
+svn:wc:ra_dav:version-url
+V 100
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/commandProc.go
+END
+init.go
+K 25
+svn:wc:ra_dav:version-url
+V 93
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/init.go
+END
+routing.go
+K 25
+svn:wc:ra_dav:version-url
+V 96
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/olderhc/routing.go
+END

@@ -1,0 +1,65 @@
+K 25
+svn:wc:ra_dav:version-url
+V 89
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer
+END
+conf.ini
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/conf.ini
+END
+producer
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/producer
+END
+main
+K 25
+svn:wc:ra_dav:version-url
+V 94
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/main
+END
+producer.go
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/producer.go
+END
+build.sh
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/build.sh
+END
+main.go
+K 25
+svn:wc:ra_dav:version-url
+V 97
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/main.go
+END
+chantest
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/chantest
+END
+testchan
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/testchan
+END
+chantest.go
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/chantest.go
+END
+testchan.go
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/svn/linux_project/!svn/ver/5/gateway/branches/1.0.0-20160613/src/dataRelayGo/relayServer/testchan.go
+END
